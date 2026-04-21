@@ -27,24 +27,48 @@ export class StockfishService {
   }
 
   private start() {
-    // El paquete npm 'stockfish' funciona en Windows, Linux y Mac
     const stockfishFactory = require('stockfish');
-    this.engine = stockfishFactory();
+    // v18: la factory devuelve un objeto con .then() o directamente el engine
+    const instance = stockfishFactory();
 
-    this.engine.onmessage = (line: any) => {
-      const text = typeof line === 'object' ? line.data : line;
-      if (typeof text === 'string') {
-        this.handleLine(text.trim());
-      }
+    const init = (eng: any) => {
+      this.engine = eng;
+
+      // v18 usa 'listener' para recibir output
+      this.engine.listener = (line: string) => {
+        if (typeof line === 'string') this.handleLine(line.trim());
+      };
+
+      // fallback por si usa onmessage (versiones anteriores)
+      this.engine.onmessage = (msg: any) => {
+        const text = typeof msg === 'object' ? msg.data : msg;
+        if (typeof text === 'string') this.handleLine(text.trim());
+      };
+
+      this.write('uci');
+      this.write('setoption name MultiPV value 3');
+      this.write('isready');
     };
 
-    this.write('uci');
-    this.write('setoption name MultiPV value 3');
-    this.write('isready');
+    // Algunos builds son async (Promise), otros síncronos
+    if (instance && typeof instance.then === 'function') {
+      instance.then(init);
+    } else {
+      init(instance);
+    }
   }
 
   private write(cmd: string) {
-    this.engine?.postMessage(cmd);
+    if (!this.engine) return;
+    // v18 usa postMessage, versiones anteriores también — pero el engine
+    // puede exponerlo como propiedad del objeto o del módulo
+    if (typeof this.engine.postMessage === 'function') {
+      this.engine.postMessage(cmd);
+    } else if (typeof this.engine === 'function') {
+      this.engine(cmd);
+    } else {
+      console.error('[Stockfish] No se encontró método para enviar comandos');
+    }
   }
 
   private handleLine(line: string) {
@@ -82,7 +106,6 @@ export class StockfishService {
 
       this.currentResolve = null;
       this.currentLines = [];
-
       resolve?.(this.parseMultiPV(lines, fen));
 
       if (this.nextResolve) {
@@ -125,7 +148,7 @@ export class StockfishService {
   }
 
   shutdown() {
-    this.engine?.terminate?.();
+    try { this.engine?.terminate?.(); } catch (_) {}
   }
 
   private parseMultiPV(lines: string[], fen: string): Suggestion[] {
