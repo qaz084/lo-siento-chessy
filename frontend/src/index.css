@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+/* Estilos base para el cuerpo de la app */
+@layer base {
+  body {
+    background-color: #0f172a;
+    color: #e2e8f0;
+    min-height: 100vh;
+    margin: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  }
+}

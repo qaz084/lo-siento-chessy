@@ -1,0 +1,15 @@
+# Dependencias
+frontend/node_modules
+backend/node_modules
+
+# Builds
+frontend/dist
+backend/dist
+
+# Variables de entorno
+backend/.env
+frontend/.env
+
+# Logs y misc
+*.log
+.DS_Store
