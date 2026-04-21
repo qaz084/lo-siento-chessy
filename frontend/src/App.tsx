@@ -162,7 +162,7 @@ const App: React.FC = () => {
     <div className="max-w-6xl mx-auto p-4 lg:p-8 flex flex-col items-center">
       <header className="mb-6 text-center">
         <h1 className="text-4xl font-light tracking-widest text-[#e2b96f] flex items-center gap-3">
-          <Target size={32} /> CHESSY PRO
+          <Target size={32} /> Lo siento Chessy 
         </h1>
       </header>
 
