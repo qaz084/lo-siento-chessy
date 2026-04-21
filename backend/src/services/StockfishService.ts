@@ -1,28 +1,25 @@
-import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import { Chess } from 'chess.js';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
 
 export interface Suggestion { uci: string; san: string; score: string; }
 
 type Resolver = (suggestions: Suggestion[]) => void;
 
 export class StockfishService {
-  private enginePath = 'C:\\chess\\stockfish-windows-x86-64-avx2\\stockfish\\stockfish-windows-x86-64-avx2.exe';
-
-  private process: ChildProcessWithoutNullStreams | null = null;
+  private engine: any = null;
   private ready = false;
 
-  // Análisis activo
   private currentFen = '';
   private currentDepth = 12;
   private currentLines: string[] = [];
   private currentResolve: Resolver | null = null;
 
-  // Si llega una petición mientras hay otra en curso, guardamos solo la última
   private nextFen: string | null = null;
   private nextDepth = 12;
   private nextResolve: Resolver | null = null;
 
-  // Flag para ignorar el bestmove que genera un 'stop' manual
   private ignoreNextBestmove = false;
 
   constructor() {
@@ -30,24 +27,16 @@ export class StockfishService {
   }
 
   private start() {
-    this.process = spawn(this.enginePath);
+    // El paquete npm 'stockfish' funciona en Windows, Linux y Mac
+    const stockfishFactory = require('stockfish');
+    this.engine = stockfishFactory();
 
-    this.process.stdout.on('data', (data: Buffer) => {
-      const lines = data.toString().split('\n');
-      for (const line of lines) {
-        this.handleLine(line.trim());
+    this.engine.onmessage = (line: any) => {
+      const text = typeof line === 'object' ? line.data : line;
+      if (typeof text === 'string') {
+        this.handleLine(text.trim());
       }
-    });
-
-    this.process.stderr.on('data', (data: Buffer) =>
-      console.error('[Stockfish stderr]', data.toString())
-    );
-
-    this.process.on('close', (code) => {
-      console.warn(`[Stockfish] cerrado (${code}). Reiniciando en 1s...`);
-      this.ready = false;
-      setTimeout(() => this.start(), 1000);
-    });
+    };
 
     this.write('uci');
     this.write('setoption name MultiPV value 3');
@@ -55,13 +44,12 @@ export class StockfishService {
   }
 
   private write(cmd: string) {
-    this.process?.stdin.write(cmd + '\n');
+    this.engine?.postMessage(cmd);
   }
 
   private handleLine(line: string) {
     if (!line) return;
 
-    // Motor listo
     if (line === 'readyok') {
       this.ready = true;
       if (this.nextResolve) {
@@ -72,16 +60,13 @@ export class StockfishService {
       return;
     }
 
-    // Línea de análisis multipv al depth exacto
     if (line.includes('multipv') && line.includes(`depth ${this.currentDepth}`)) {
       this.currentLines.push(line);
       return;
     }
 
-    // Fin de análisis
     if (line.startsWith('bestmove')) {
       if (this.ignoreNextBestmove) {
-        // Viene de un 'stop' manual — ignorar y lanzar el siguiente
         this.ignoreNextBestmove = false;
         if (this.nextResolve) {
           this.dispatch(this.nextFen!, this.nextDepth, this.nextResolve);
@@ -91,7 +76,6 @@ export class StockfishService {
         return;
       }
 
-      // Análisis completado normalmente
       const resolve = this.currentResolve;
       const fen = this.currentFen;
       const lines = [...this.currentLines];
@@ -101,7 +85,6 @@ export class StockfishService {
 
       resolve?.(this.parseMultiPV(lines, fen));
 
-      // Si llegó algo nuevo mientras analizábamos, lanzarlo ahora
       if (this.nextResolve) {
         this.dispatch(this.nextFen!, this.nextDepth, this.nextResolve);
         this.nextFen = null;
@@ -129,7 +112,6 @@ export class StockfishService {
       }
 
       if (this.currentResolve) {
-        // Análisis en curso — cancelar y encolar el nuevo
         this.nextFen = fen;
         this.nextDepth = depth;
         this.nextResolve = resolve;
@@ -143,8 +125,7 @@ export class StockfishService {
   }
 
   shutdown() {
-    this.write('quit');
-    this.process?.kill();
+    this.engine?.terminate?.();
   }
 
   private parseMultiPV(lines: string[], fen: string): Suggestion[] {
