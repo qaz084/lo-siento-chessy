@@ -1,16 +1,21 @@
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import { Chess } from 'chess.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export interface Suggestion { uci: string; san: string; score: string; }
 
 type Resolver = (suggestions: Suggestion[]) => void;
 
 export class StockfishService {
-  // En Linux (Render) stockfish se instala en /usr/games/stockfish
-  // En Windows local usamos la ruta al .exe
-  private enginePath = process.platform === 'win32'
-    ? 'C:\\chess\\stockfish-windows-x86-64-avx2\\stockfish\\stockfish-windows-x86-64-avx2.exe'
-    : '/usr/games/stockfish';
+  // Prioridad: variable de entorno STOCKFISH_PATH > ruta por plataforma
+  private enginePath = process.env.STOCKFISH_PATH || (
+    process.platform === 'win32'
+      ? 'C:\\chess\\stockfish-windows-x86-64-avx2\\stockfish\\stockfish-windows-x86-64-avx2.exe'
+      : path.join(__dirname, '../../bin/stockfish')  // descargado por build.sh
+  );
 
   private process: ChildProcessWithoutNullStreams | null = null;
   private ready = false;
@@ -27,6 +32,7 @@ export class StockfishService {
   private ignoreNextBestmove = false;
 
   constructor() {
+    console.log(`[Stockfish] usando binario: ${this.enginePath}`);
     this.start();
   }
 
