@@ -1,14 +1,18 @@
+import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import { Chess } from 'chess.js';
-import { createRequire } from 'module';
-
-const require = createRequire(import.meta.url);
 
 export interface Suggestion { uci: string; san: string; score: string; }
 
 type Resolver = (suggestions: Suggestion[]) => void;
 
 export class StockfishService {
-  private engine: any = null;
+  // En Linux (Render) stockfish se instala en /usr/games/stockfish
+  // En Windows local usamos la ruta al .exe
+  private enginePath = process.platform === 'win32'
+    ? 'C:\\chess\\stockfish-windows-x86-64-avx2\\stockfish\\stockfish-windows-x86-64-avx2.exe'
+    : '/usr/games/stockfish';
+
+  private process: ChildProcessWithoutNullStreams | null = null;
   private ready = false;
 
   private currentFen = '';
@@ -27,48 +31,35 @@ export class StockfishService {
   }
 
   private start() {
-    const stockfishFactory = require('stockfish');
-    // v18: la factory devuelve un objeto con .then() o directamente el engine
-    const instance = stockfishFactory();
-
-    const init = (eng: any) => {
-      this.engine = eng;
-
-      // v18 usa 'listener' para recibir output
-      this.engine.listener = (line: string) => {
-        if (typeof line === 'string') this.handleLine(line.trim());
-      };
-
-      // fallback por si usa onmessage (versiones anteriores)
-      this.engine.onmessage = (msg: any) => {
-        const text = typeof msg === 'object' ? msg.data : msg;
-        if (typeof text === 'string') this.handleLine(text.trim());
-      };
-
-      this.write('uci');
-      this.write('setoption name MultiPV value 3');
-      this.write('isready');
-    };
-
-    // Algunos builds son async (Promise), otros síncronos
-    if (instance && typeof instance.then === 'function') {
-      instance.then(init);
-    } else {
-      init(instance);
+    try {
+      this.process = spawn(this.enginePath);
+    } catch (e) {
+      console.error('[Stockfish] No se pudo iniciar el motor:', e);
+      return;
     }
+
+    this.process.stdout.on('data', (data: Buffer) => {
+      const lines = data.toString().split('\n');
+      for (const line of lines) this.handleLine(line.trim());
+    });
+
+    this.process.stderr.on('data', (data: Buffer) =>
+      console.error('[Stockfish stderr]', data.toString())
+    );
+
+    this.process.on('close', (code) => {
+      console.warn(`[Stockfish] cerrado (${code}). Reiniciando en 1s...`);
+      this.ready = false;
+      setTimeout(() => this.start(), 1000);
+    });
+
+    this.write('uci');
+    this.write('setoption name MultiPV value 3');
+    this.write('isready');
   }
 
   private write(cmd: string) {
-    if (!this.engine) return;
-    // v18 usa postMessage, versiones anteriores también — pero el engine
-    // puede exponerlo como propiedad del objeto o del módulo
-    if (typeof this.engine.postMessage === 'function') {
-      this.engine.postMessage(cmd);
-    } else if (typeof this.engine === 'function') {
-      this.engine(cmd);
-    } else {
-      console.error('[Stockfish] No se encontró método para enviar comandos');
-    }
+    this.process?.stdin.write(cmd + '\n');
   }
 
   private handleLine(line: string) {
@@ -148,7 +139,8 @@ export class StockfishService {
   }
 
   shutdown() {
-    try { this.engine?.terminate?.(); } catch (_) {}
+    this.write('quit');
+    this.process?.kill();
   }
 
   private parseMultiPV(lines: string[], fen: string): Suggestion[] {
