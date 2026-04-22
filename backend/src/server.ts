@@ -4,7 +4,20 @@ import cors from 'cors';
 import { StockfishService } from './services/StockfishService.js';
 
 const app = express();
-app.use(cors());
+const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? 'http://localhost:5173')
+  .split(',')
+  .map(o => o.trim());
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('CORS no permitido'));
+    }
+  }
+}));
+
 app.use(express.json());
 
 const stockfish = new StockfishService();
