@@ -516,6 +516,83 @@ p, label, .chat-bubble__text, .panel-body {
 .btn-secondary:hover { background: var(--bg-0); border-color: var(--gold-dim); color: var(--text-0); }
 .btn-secondary:active { transform: scale(.97); }
 
+/* ─── VS COMPUTER PANEL ──────────────────────────────────────────────────── */
+.vs-computer-panel {
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); overflow: hidden;
+  box-shadow: var(--shadow-card); animation: fadeUp .2s ease both;
+}
+
+.vs-computer-panel__header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: .75rem 1rem;
+}
+
+.vs-computer-panel__title-row {
+  display: flex; align-items: center; gap: .4rem;
+}
+
+.vs-computer-panel__icon { color: var(--gold); }
+
+.vs-computer-panel__title {
+  font-size: .65rem; font-weight: 700; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--gold);
+}
+
+.vs-computer-panel__body {
+  padding: 0 1rem .875rem;
+  border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: .625rem;
+}
+
+.vs-computer-panel__level-row {
+  display: flex; flex-direction: column; gap: .25rem;
+  padding-top: .75rem;
+}
+
+.vs-computer-panel__level-label {
+  font-size: .8rem; color: var(--text-2);
+}
+
+.vs-computer-panel__level-label strong {
+  color: var(--text-0);
+}
+
+.vs-computer-panel__slider {
+  width: 100%; accent-color: var(--gold);
+}
+
+.vs-computer-panel__level-ticks {
+  display: flex; justify-content: space-between;
+  font-size: .7rem; color: var(--text-2);
+}
+
+.vs-computer-panel__status {
+  display: flex; align-items: center; gap: .3rem;
+  font-size: .78rem; color: var(--text-2);
+}
+
+.vs-computer-panel__thinking {
+  display: flex; align-items: center; gap: .4rem;
+  font-size: .8rem; color: var(--gold);
+  font-style: italic;
+}
+
+.vs-computer-panel__gameover {
+  padding: .5rem .75rem;
+  background: rgba(201,168,76,.12);
+  border: 1px solid var(--gold-dim);
+  border-radius: var(--radius-sm);
+  font-size: .85rem; font-weight: 600; color: var(--gold);
+  text-align: center;
+}
+
+/* Tablero bloqueado durante turno de la PC */
+.board-wrapper--disabled {
+  opacity: .85;
+  pointer-events: none;
+}
+
 /* ─── HIGH CONTRAST ───────────────────────────────────────────────────────── */
 @media (forced-colors: active) {
   .btn-icon, .collapsible, .chat-bubble--user .chat-bubble__text,

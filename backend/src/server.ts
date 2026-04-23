@@ -125,6 +125,38 @@ Responde siempre en español, de forma breve y con tu personalidad característi
   }
 });
 
+// --- ENDPOINT 3: Movimiento de la computadora ---
+app.post('/move', async (req, res) => {
+  const { fen, level } = req.body;
+
+  // level 1-8 → depth progresivo con algo de aleatoriedad en niveles bajos
+  const depthMap: Record<number, number> = {
+    1: 1, 2: 2, 3: 4, 4: 6, 5: 8, 6: 10, 7: 12, 8: 15
+  };
+  const lvl = Math.max(1, Math.min(8, parseInt(level) || 4));
+  const depth = depthMap[lvl];
+
+  try {
+    // En niveles bajos, a veces jugamos una jugada aleatoria válida
+    if (lvl <= 2 && Math.random() < 0.5) {
+      const { Chess } = await import('chess.js');
+      const g = new Chess(fen);
+      const moves = g.moves({ verbose: true });
+      if (moves.length > 0) {
+        const m = moves[Math.floor(Math.random() * moves.length)];
+        return res.json({ move: m.from + m.to + (m.promotion ?? '') });
+      }
+    }
+
+    const move = await stockfish.getBestMove(fen, depth);
+    if (!move) return res.status(400).json({ error: 'No hay movimiento disponible' });
+    res.json({ move });
+  } catch (error: any) {
+    console.error('[/move] Error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // --- SERVIDOR ---
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 app.listen(PORT, () => console.log(`🚀 Backend corriendo en puerto ${PORT}`));

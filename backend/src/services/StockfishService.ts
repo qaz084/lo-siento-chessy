@@ -180,4 +180,9 @@ export class StockfishService {
 
     return suggestions.sort((a, b) => parseFloat(b.score) - parseFloat(a.score));
   }
+
+  async getBestMove(fen: string, depth = 8): Promise<string | null> {
+    const suggestions = await this.analyze(fen, depth);
+    return suggestions[0]?.uci ?? null;
+  }
 }

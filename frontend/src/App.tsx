@@ -22,6 +22,8 @@ import {
   Copy,
   Settings,
   X,
+  Bot,
+  User,
 } from 'lucide-react';
 
 // ─── TIPOS ────────────────────────────────────────────────────────────────────
@@ -47,6 +49,17 @@ const COACHES: Record<string, { label: string; avatar: string }> = {
   magnus:  { label: 'Magnus Carlsen',  avatar: 'MC' },
   hikaru:  { label: 'Hikaru Nakamura', avatar: 'HN' },
   fischer: { label: 'Bobby Fischer',   avatar: 'BF' },
+};
+
+const DIFFICULTY_LABELS: Record<number, string> = {
+  1: 'Principiante',
+  2: 'Fácil',
+  3: 'Fácil+',
+  4: 'Intermedio',
+  5: 'Intermedio+',
+  6: 'Avanzado',
+  7: 'Experto',
+  8: 'Maestro',
 };
 
 // ─── UTILIDAD: exportar PGN ───────────────────────────────────────────────────
@@ -148,6 +161,72 @@ const ArrowToggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void }
   );
 };
 
+// ─── COMPONENTE: Panel modo vs PC ─────────────────────────────────────────────
+const VsComputerPanel: React.FC<{
+  enabled: boolean;
+  level: number;
+  onToggle: () => void;
+  onLevelChange: (l: number) => void;
+  isComputerTurn: boolean;
+  gameOver: string | null;
+}> = ({ enabled, level, onToggle, onLevelChange, isComputerTurn, gameOver }) => (
+  <div className="vs-computer-panel">
+    <div className="vs-computer-panel__header">
+      <div className="vs-computer-panel__title-row">
+        <Bot size={14} aria-hidden="true" className="vs-computer-panel__icon" />
+        <span className="vs-computer-panel__title">vs Computadora</span>
+      </div>
+      <button
+        role="switch"
+        aria-checked={enabled}
+        onClick={onToggle}
+        className={`arrow-toggle__switch${enabled ? ' arrow-toggle__switch--on' : ''}`}
+        aria-label={enabled ? 'Desactivar modo vs computadora' : 'Activar modo vs computadora'}
+      >
+        <span className="arrow-toggle__thumb" />
+      </button>
+    </div>
+
+    {enabled && (
+      <div className="vs-computer-panel__body">
+        <div className="vs-computer-panel__level-row">
+          <label className="vs-computer-panel__level-label">
+            Nivel: <strong>{DIFFICULTY_LABELS[level]}</strong>
+          </label>
+          <input
+            type="range" min={1} max={8} step={1} value={level}
+            onChange={e => onLevelChange(parseInt(e.target.value))}
+            className="vs-computer-panel__slider"
+            aria-label={`Nivel de dificultad: ${DIFFICULTY_LABELS[level]}`}
+          />
+          <div className="vs-computer-panel__level-ticks">
+            <span>1</span><span>8</span>
+          </div>
+        </div>
+
+        <div className="vs-computer-panel__status">
+          <User size={12} aria-hidden="true" /> Blancas (vos)
+          &nbsp;·&nbsp;
+          <Bot size={12} aria-hidden="true" /> Negras (PC)
+        </div>
+
+        {isComputerTurn && !gameOver && (
+          <div className="vs-computer-panel__thinking" role="status">
+            <Loader2 size={12} className="spin" aria-hidden="true" />
+            La computadora está pensando…
+          </div>
+        )}
+
+        {gameOver && (
+          <div className="vs-computer-panel__gameover" role="status">
+            {gameOver}
+          </div>
+        )}
+      </div>
+    )}
+  </div>
+);
+
 // ─── COMPONENTE: Modal de exportación ────────────────────────────────────────
 const ExportModal: React.FC<{ pgn: string; fen: string; onClose: () => void }> = ({ pgn, fen, onClose }) => {
   const [copied, setCopied] = useState<'pgn' | 'fen' | null>(null);
@@ -167,7 +246,6 @@ const ExportModal: React.FC<{ pgn: string; fen: string; onClose: () => void }> =
     URL.revokeObjectURL(url);
   };
 
-  // Cerrar con Escape
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', h);
@@ -197,7 +275,6 @@ const ExportModal: React.FC<{ pgn: string; fen: string; onClose: () => void }> =
               Descargar .pgn
             </button>
           </div>
-
           <p className="modal__label" style={{ marginTop: '1rem' }}>FEN actual</p>
           <pre className="modal__pre modal__pre--fen">{fen}</pre>
           <div className="modal__actions">
@@ -212,7 +289,7 @@ const ExportModal: React.FC<{ pgn: string; fen: string; onClose: () => void }> =
   );
 };
 
-// ─── COMPONENTE: Dropdown de configuración en el header ──────────────────────
+// ─── COMPONENTE: Dropdown de configuración ───────────────────────────────────
 const HeaderSettings: React.FC<{
   coachId: string;
   onCoachChange: (id: string) => void;
@@ -330,6 +407,13 @@ const App: React.FC = () => {
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [showArrows, setShowArrows]   = useState(true);
 
+  // Modo vs Computadora
+  const [vsComputer, setVsComputer]       = useState(false);
+  const [difficulty, setDifficulty]       = useState(4);
+  const [isComputerTurn, setIsComputerTurn] = useState(false);
+  const [gameOver, setGameOver]           = useState<string | null>(null);
+  const computerMovingRef                 = useRef(false);
+
   const [chatLog, setChatLog]         = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput]     = useState('');
   const [loadingChat, setLoadingChat] = useState(false);
@@ -356,34 +440,117 @@ const App: React.FC = () => {
 
   useEffect(() => { fetchAnalysis(gameRef.current.fen(), coachId); /* eslint-disable-next-line */ }, []);
 
+  // ─── Detectar fin de partida ────────────────────────────────────────────────
+  const checkGameOver = useCallback((g: Chess) => {
+    if (g.isCheckmate()) {
+      const winner = g.turn() === 'w' ? 'Negras' : 'Blancas';
+      setGameOver(`¡Jaque mate! Ganaron ${winner}.`);
+    } else if (g.isDraw()) {
+      setGameOver('¡Tablas!');
+    } else if (g.isStalemate()) {
+      setGameOver('Tablas por ahogado.');
+    } else {
+      setGameOver(null);
+    }
+  }, []);
+
+  // ─── Movimiento de la computadora ──────────────────────────────────────────
+  const doComputerMove = useCallback(async (fen: string, level: number) => {
+    if (computerMovingRef.current) return;
+    computerMovingRef.current = true;
+    setIsComputerTurn(true);
+
+    // Pequeño delay para que se sienta natural
+    await new Promise(r => setTimeout(r, 320));
+
+    try {
+      const res = await fetch(`${API_URL}/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fen, level }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { move } = await res.json();
+
+      const copy = new Chess(fen);
+      copy.move({
+        from: move.slice(0, 2) as Square,
+        to: move.slice(2, 4) as Square,
+        promotion: move[4] ?? 'q',
+      });
+
+      const newFen  = copy.fen();
+      const newHist = historyRef.current.slice(0, currentStepRef.current + 1);
+      newHist.push(newFen);
+      const newStep = newHist.length - 1;
+
+      gameRef.current = copy;
+      historyRef.current = newHist;
+      currentStepRef.current = newStep;
+
+      setGame(copy);
+      setHistory(newHist);
+      setCurrentStep(newStep);
+      checkGameOver(copy);
+      fetchAnalysis(newFen, coachId);
+    } catch (err) {
+      console.error('[computer move]', err);
+    } finally {
+      computerMovingRef.current = false;
+      setIsComputerTurn(false);
+    }
+  }, [coachId, fetchAnalysis, checkGameOver]);
+
   const arrows = useMemo<BoardArrow[]>(() => {
     if (!showArrows || !analysis?.suggestions) return [];
     return analysis.suggestions.map(s => [s.uci.slice(0, 2) as Square, s.uci.slice(2, 4) as Square]);
   }, [analysis, showArrows]);
 
   const onDrop = useCallback((from: string, to: string): boolean => {
+    // Bloquear si es turno de la PC o partida terminada
+    if (vsComputer && (isComputerTurn || gameOver || computerMovingRef.current)) return false;
+    // En modo vs PC, solo se pueden mover las blancas
+    if (vsComputer && gameRef.current.turn() !== 'w') return false;
+
     try {
       const copy = new Chess(gameRef.current.fen());
       const move: Move | null = copy.move({ from: from as Square, to: to as Square, promotion: 'q' });
       if (!move) return false;
+
       const newFen  = copy.fen();
       const newHist = historyRef.current.slice(0, currentStepRef.current + 1);
       newHist.push(newFen);
       const newStep = newHist.length - 1;
-      gameRef.current = copy; historyRef.current = newHist; currentStepRef.current = newStep;
-      setGame(copy); setHistory(newHist); setCurrentStep(newStep);
+
+      gameRef.current = copy;
+      historyRef.current = newHist;
+      currentStepRef.current = newStep;
+
+      setGame(copy);
+      setHistory(newHist);
+      setCurrentStep(newStep);
+      checkGameOver(copy);
       fetchAnalysis(newFen, coachId);
+
+      // Si modo vs PC y no terminó la partida, pedir jugada de la PC
+      if (vsComputer && !copy.isGameOver()) {
+        doComputerMove(newFen, difficulty);
+      }
+
       return true;
     } catch { return false; }
-  }, [coachId, fetchAnalysis]);
+  }, [vsComputer, isComputerTurn, gameOver, coachId, fetchAnalysis, checkGameOver, doComputerMove, difficulty]);
 
   const navigate = useCallback((dir: number) => {
+    // Navegar desactiva el modo vs PC temporalmente
     const next = currentStepRef.current + dir;
     if (next < 0 || next >= historyRef.current.length) return;
     const fen = historyRef.current[next];
     const ng  = new Chess(fen);
-    gameRef.current = ng; currentStepRef.current = next;
-    setGame(ng); setCurrentStep(next);
+    gameRef.current = ng;
+    currentStepRef.current = next;
+    setGame(ng);
+    setCurrentStep(next);
     fetchAnalysis(fen, coachId);
   }, [coachId, fetchAnalysis]);
 
@@ -392,10 +559,24 @@ const App: React.FC = () => {
     fetchAnalysis(gameRef.current.fen(), id);
   }, [fetchAnalysis]);
 
+  const toggleVsComputer = useCallback(() => {
+    setVsComputer(v => {
+      const next = !v;
+      // Al activar, si es turno de negras (posición rara inicial), no hacer nada
+      setGameOver(null);
+      computerMovingRef.current = false;
+      setIsComputerTurn(false);
+      return next;
+    });
+  }, []);
+
   const sendChat = useCallback(async () => {
     const q = chatInput.trim();
     if (!q || loadingChat) return;
-    const safeQ = q.slice(0, 500).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+   const safeQ = q.slice(0, 500).replace(
+  // eslint-disable-next-line no-control-regex
+  /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ''
+);
     if (!safeQ) return;
     const updated: ChatMessage[] = [...chatLog, { role: 'user', text: safeQ }];
     setChatLog(updated); setChatInput(''); setLoadingChat(true);
@@ -416,14 +597,25 @@ const App: React.FC = () => {
 
   const resetGame = () => {
     const fresh = new Chess();
-    gameRef.current = fresh; historyRef.current = [fresh.fen()]; currentStepRef.current = 0;
-    setGame(fresh); setHistory([fresh.fen()]); setCurrentStep(0);
-    setAnalysis(null); setChatLog([]);
+    gameRef.current = fresh;
+    historyRef.current = [fresh.fen()];
+    currentStepRef.current = 0;
+    computerMovingRef.current = false;
+    setGame(fresh);
+    setHistory([fresh.fen()]);
+    setCurrentStep(0);
+    setAnalysis(null);
+    setChatLog([]);
+    setGameOver(null);
+    setIsComputerTurn(false);
     fetchAnalysis(fresh.fen(), coachId);
   };
 
   const evalScore = analysis?.suggestions[0]?.score ?? '0.0';
   const pgn       = buildPGN(historyRef.current);
+
+  // Bloquear el tablero cuando es turno de la PC
+  const boardDisabled = vsComputer && (isComputerTurn || !!gameOver);
 
   return (
     <>
@@ -444,7 +636,7 @@ const App: React.FC = () => {
         <main id="main-content" className="app-main">
           <section className="board-section" aria-label="Tablero de ajedrez">
             <EvalBar score={evalScore} loading={loadingAnalysis} />
-            <div className="board-wrapper">
+            <div className={`board-wrapper${boardDisabled ? ' board-wrapper--disabled' : ''}`}>
               <Chessboard
                 position={game.fen()}
                 onPieceDrop={onDrop}
@@ -453,19 +645,20 @@ const App: React.FC = () => {
                 customLightSquareStyle={{ backgroundColor: '#94a3b8' }}
                 animationDuration={180}
                 arePremovesAllowed={false}
+                arePiecesDraggable={!boardDisabled}
               />
             </div>
           </section>
 
           <nav className="board-controls" aria-label="Controles del tablero">
-            <button onClick={() => navigate(-1)} disabled={currentStep === 0}
+            <button onClick={() => navigate(-1)} disabled={currentStep === 0 || (vsComputer && isComputerTurn)}
               className="btn-icon" aria-label="Jugada anterior">
               <ChevronLeft size={20} aria-hidden="true" />
             </button>
             <span className="board-controls__step" aria-live="polite" aria-atomic="true">
               {currentStep > 0 ? `Jugada ${currentStep}` : 'Inicio'}
             </span>
-            <button onClick={() => navigate(1)} disabled={currentStep === history.length - 1}
+            <button onClick={() => navigate(1)} disabled={currentStep === history.length - 1 || (vsComputer && isComputerTurn)}
               className="btn-icon" aria-label="Jugada siguiente">
               <ChevronRight size={20} aria-hidden="true" />
             </button>
@@ -480,6 +673,15 @@ const App: React.FC = () => {
           </nav>
 
           <aside className="side-panel" aria-label="Panel del entrenador">
+            <VsComputerPanel
+              enabled={vsComputer}
+              level={difficulty}
+              onToggle={toggleVsComputer}
+              onLevelChange={setDifficulty}
+              isComputerTurn={isComputerTurn}
+              gameOver={gameOver}
+            />
+
             <Collapsible
               defaultOpen={false}
               title={
