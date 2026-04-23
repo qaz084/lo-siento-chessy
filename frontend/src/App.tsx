@@ -456,51 +456,56 @@ const App: React.FC = () => {
 
   // ─── Movimiento de la computadora ──────────────────────────────────────────
   const doComputerMove = useCallback(async (fen: string, level: number) => {
-    if (computerMovingRef.current) return;
-    computerMovingRef.current = true;
-    setIsComputerTurn(true);
+  if (computerMovingRef.current) return;
+  computerMovingRef.current = true;
+  setIsComputerTurn(true);
 
-    // Pequeño delay para que se sienta natural
-    await new Promise(r => setTimeout(r, 320));
+  await new Promise(r => setTimeout(r, 320));
 
-    try {
-      const res = await fetch(`${API_URL}/move`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fen, level }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const { move } = await res.json();
+  try {
+    console.log('[PC] pidiendo movimiento, fen:', fen, 'level:', level);
+    
+    const res = await fetch(`${API_URL}/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fen, level }),
+    });
+    
+    console.log('[PC] respuesta status:', res.status);
+    const data = await res.json();
+    console.log('[PC] data recibida:', data);
+    
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const { move } = data;
 
-      const copy = new Chess(fen);
-      copy.move({
-        from: move.slice(0, 2) as Square,
-        to: move.slice(2, 4) as Square,
-        promotion: move[4] ?? 'q',
-      });
+    const copy = new Chess(fen);
+    copy.move({
+      from: move.slice(0, 2) as Square,
+      to: move.slice(2, 4) as Square,
+      promotion: move[4] ?? 'q',
+    });
 
-      const newFen  = copy.fen();
-      const newHist = historyRef.current.slice(0, currentStepRef.current + 1);
-      newHist.push(newFen);
-      const newStep = newHist.length - 1;
+    const newFen  = copy.fen();
+    const newHist = historyRef.current.slice(0, currentStepRef.current + 1);
+    newHist.push(newFen);
+    const newStep = newHist.length - 1;
 
-      gameRef.current = copy;
-      historyRef.current = newHist;
-      currentStepRef.current = newStep;
+    gameRef.current = copy;
+    historyRef.current = newHist;
+    currentStepRef.current = newStep;
 
-      setGame(copy);
-      setHistory(newHist);
-      setCurrentStep(newStep);
-      checkGameOver(copy);
-      fetchAnalysis(newFen, coachId);
-    } catch (err) {
-      console.error('[computer move]', err);
-    } finally {
-      computerMovingRef.current = false;
-      setIsComputerTurn(false);
-    }
-  }, [coachId, fetchAnalysis, checkGameOver]);
-
+    setGame(copy);
+    setHistory(newHist);
+    setCurrentStep(newStep);
+    checkGameOver(copy);
+    fetchAnalysis(newFen, coachId);
+  } catch (err) {
+    console.error('[PC] error:', err);
+  } finally {
+    computerMovingRef.current = false;
+    setIsComputerTurn(false);
+  }
+}, [coachId, fetchAnalysis, checkGameOver]);
   const arrows = useMemo<BoardArrow[]>(() => {
     if (!showArrows || !analysis?.suggestions) return [];
     return analysis.suggestions.map(s => [s.uci.slice(0, 2) as Square, s.uci.slice(2, 4) as Square]);
