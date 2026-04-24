@@ -455,57 +455,64 @@ const App: React.FC = () => {
   }, []);
 
   // ─── Movimiento de la computadora ──────────────────────────────────────────
-  const doComputerMove = useCallback(async (fen: string, level: number) => {
-  if (computerMovingRef.current) return;
-  computerMovingRef.current = true;
-  setIsComputerTurn(true);
+const doComputerMove = useCallback(async (fen: string, level: number) => {
+    if (computerMovingRef.current) return;
+    computerMovingRef.current = true;
+    setIsComputerTurn(true);
 
-  await new Promise(r => setTimeout(r, 320));
+    // Un pequeño respiro para que la transición sea fluida
+    await new Promise(r => setTimeout(r, 600));
 
-  try {
-    console.log('[PC] pidiendo movimiento, fen:', fen, 'level:', level);
-    
-    const res = await fetch(`${API_URL}/move`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fen, level }),
-    });
-    
-    console.log('[PC] respuesta status:', res.status);
-    const data = await res.json();
-    console.log('[PC] data recibida:', data);
-    
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const { move } = data;
+    try {
+      const res = await fetch(`${API_URL}/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fen, level }),
+      });
+      
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const moveStr = data.move;
 
-    const copy = new Chess(fen);
-    copy.move({
-      from: move.slice(0, 2) as Square,
-      to: move.slice(2, 4) as Square,
-      promotion: move[4] ?? 'q',
-    });
+      if (!moveStr) throw new Error("No se recibió movimiento del servidor");
 
-    const newFen  = copy.fen();
-    const newHist = historyRef.current.slice(0, currentStepRef.current + 1);
-    newHist.push(newFen);
-    const newStep = newHist.length - 1;
+      // Usamos el FEN que recibimos como parámetro para crear la instancia
+      const copy = new Chess(fen);
+      
+      // Intentamos aplicar el movimiento (chess.js acepta UCI strings directamente)
+      const result = copy.move(moveStr);
 
-    gameRef.current = copy;
-    historyRef.current = newHist;
-    currentStepRef.current = newStep;
+      if (result) {
+        const newFen = copy.fen();
+        
+        // IMPORTANTE: El nuevo historial debe basarse en el historial actual real
+        const newHist = [...historyRef.current, newFen];
+        const newStep = newHist.length - 1;
 
-    setGame(copy);
-    setHistory(newHist);
-    setCurrentStep(newStep);
-    checkGameOver(copy);
-    fetchAnalysis(newFen, coachId);
-  } catch (err) {
-    console.error('[PC] error:', err);
-  } finally {
-    computerMovingRef.current = false;
-    setIsComputerTurn(false);
-  }
-}, [coachId, fetchAnalysis, checkGameOver]);
+        // 1. Actualizar Referencias (inmediato)
+        gameRef.current = copy;
+        historyRef.current = newHist;
+        currentStepRef.current = newStep;
+
+        // 2. Actualizar Estados (dispara el re-renderizado)
+        // Usamos una nueva instancia de Chess para que el tablero detecte el cambio
+        setGame(new Chess(newFen));
+        setHistory(newHist);
+        setCurrentStep(newStep);
+        
+        checkGameOver(copy);
+        fetchAnalysis(newFen, coachId);
+      } else {
+        console.error("El servidor devolvió un movimiento inválido para esta posición:", moveStr);
+      }
+    } catch (err) {
+      console.error('[Error en doComputerMove]:', err);
+    } finally {
+      computerMovingRef.current = false;
+      setIsComputerTurn(false);
+    }
+  }, [coachId, fetchAnalysis, checkGameOver]);
+
   const arrows = useMemo<BoardArrow[]>(() => {
     if (!showArrows || !analysis?.suggestions) return [];
     return analysis.suggestions.map(s => [s.uci.slice(0, 2) as Square, s.uci.slice(2, 4) as Square]);
@@ -537,11 +544,13 @@ const App: React.FC = () => {
       checkGameOver(copy);
       fetchAnalysis(newFen, coachId);
 
-      // Si modo vs PC y no terminó la partida, pedir jugada de la PC
+          // Si modo vs PC y no terminó la partida, pedir jugada de la PC
       if (vsComputer && !copy.isGameOver()) {
-        doComputerMove(newFen, difficulty);
+        // Usar un micro-timeout para asegurar que el estado de las blancas se procese primero
+        setTimeout(() => {
+          doComputerMove(newFen, difficulty);
+        }, 50);
       }
-
       return true;
     } catch { return false; }
   }, [vsComputer, isComputerTurn, gameOver, coachId, fetchAnalysis, checkGameOver, doComputerMove, difficulty]);
