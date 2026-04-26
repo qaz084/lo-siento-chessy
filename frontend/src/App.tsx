@@ -32,11 +32,9 @@ interface Suggestion { uci: string; san: string; score: string; }
 interface AnalysisResponse {
   suggestions: Suggestion[];
   explanation: string;
-  threatSuggestions?: Suggestion[]; // mejores jugadas del rival
+  threatSuggestions?: Suggestion[];
 }
 interface ChatMessage { role: 'user' | 'coach'; text: string; }
-
-// react-chessboard acepta flechas como [Square, Square, string?]
 type BoardArrow = [Square, Square, string?];
 
 // ─── CONSTANTES ───────────────────────────────────────────────────────────────
@@ -59,28 +57,20 @@ const COACHES: Record<string, { label: string; avatar: string }> = {
 };
 
 const DIFFICULTY_LABELS: Record<number, string> = {
-  1: 'Principiante',
-  2: 'Fácil',
-  3: 'Fácil+',
-  4: 'Intermedio',
-  5: 'Intermedio+',
-  6: 'Avanzado',
-  7: 'Experto',
-  8: 'Maestro',
+  1: 'Principiante', 2: 'Fácil', 3: 'Fácil+', 4: 'Intermedio',
+  5: 'Intermedio+',  6: 'Avanzado', 7: 'Experto', 8: 'Maestro',
 };
 
-// Colores de flechas propias según ranking (RGBA con transparencia)
 const ARROW_COLORS_OWN = [
-  'rgba(100, 220, 100, 0.85)',  // 1ra: verde intenso
-  'rgba(100, 200, 100, 0.50)',  // 2da: verde medio
-  'rgba(100, 180, 100, 0.28)',  // 3ra: verde tenue
+  'rgba(100, 220, 100, 0.85)',
+  'rgba(100, 200, 100, 0.50)',
+  'rgba(100, 180, 100, 0.28)',
 ];
 
-// Colores de flechas de amenaza del rival
 const ARROW_COLORS_THREAT = [
-  'rgba(255, 80, 80, 0.75)',   // 1ra amenaza: rojo intenso
-  'rgba(255, 80, 80, 0.42)',   // 2da amenaza: rojo medio
-  'rgba(255, 80, 80, 0.22)',   // 3ra amenaza: rojo tenue
+  'rgba(255, 80, 80, 0.75)',
+  'rgba(255, 80, 80, 0.42)',
+  'rgba(255, 80, 80, 0.22)',
 ];
 
 // ─── UTILIDAD: exportar PGN ───────────────────────────────────────────────────
@@ -100,7 +90,7 @@ function buildPGN(fenHistory: string[]): string {
   return game.pgn();
 }
 
-// ─── HOOK: AbortController fetch ────────────────────────────────────────────
+// ─── HOOK: AbortController fetch ─────────────────────────────────────────────
 function useAbortFetch() {
   const controllerRef = useRef<AbortController | null>(null);
   const abortableFetch = useCallback(async (url: string, options: RequestInit) => {
@@ -112,23 +102,17 @@ function useAbortFetch() {
   return abortableFetch;
 }
 
-// ─── COMPONENTE: Sección colapsable ──────────────────────────────────────────
+// ─── COMPONENTE: Collapsible ──────────────────────────────────────────────────
 const Collapsible: React.FC<{
-  title: React.ReactNode;
-  defaultOpen?: boolean;
-  accentBorder?: boolean;
-  children: React.ReactNode;
+  title: React.ReactNode; defaultOpen?: boolean;
+  accentBorder?: boolean; children: React.ReactNode;
 }> = ({ title, defaultOpen = true, accentBorder = false, children }) => {
   const [open, setOpen] = useState(defaultOpen);
   const id = useId();
   return (
     <div className={`collapsible${accentBorder ? ' collapsible--accent' : ''}`}>
-      <button
-        className="collapsible__trigger"
-        aria-expanded={open}
-        aria-controls={id}
-        onClick={() => setOpen(v => !v)}
-      >
+      <button className="collapsible__trigger" aria-expanded={open}
+        aria-controls={id} onClick={() => setOpen(v => !v)}>
         <span className="collapsible__title">{title}</span>
         <ChevronDown size={14} aria-hidden="true"
           className={`collapsible__chevron${open ? ' collapsible__chevron--open' : ''}`} />
@@ -140,7 +124,7 @@ const Collapsible: React.FC<{
   );
 };
 
-// ─── COMPONENTE: Barra de evaluación ─────────────────────────────────────────
+// ─── COMPONENTE: EvalBar ──────────────────────────────────────────────────────
 const EvalBar: React.FC<{ score: string; loading: boolean }> = ({ score, loading }) => {
   const n = parseFloat(score) || 0;
   const whitePct = Math.max(5, Math.min(95, 50 - n * 5));
@@ -154,16 +138,16 @@ const EvalBar: React.FC<{ score: string; loading: boolean }> = ({ score, loading
   );
 };
 
-// ─── COMPONENTE: Fila de sugerencia ──────────────────────────────────────────
+// ─── COMPONENTE: SuggestionRow ────────────────────────────────────────────────
 const SuggestionRow: React.FC<{ suggestion: Suggestion; rank: number; isThreat?: boolean }> = ({ suggestion, rank, isThreat }) => (
   <div className={`suggestion-row${isThreat ? ' suggestion-row--threat' : ''}`} role="listitem">
-    <span className="suggestion-row__rank" aria-label={`Opción ${rank}`}>{rank}</span>
+    <span className="suggestion-row__rank">{rank}</span>
     <span className="suggestion-row__san">{suggestion.san}</span>
     <span className={`suggestion-row__score${isThreat ? ' suggestion-row__score--threat' : ''}`}>{suggestion.score}</span>
   </div>
 );
 
-// ─── COMPONENTE: Toggle de ayudas ────────────────────────────────────────────
+// ─── COMPONENTE: ArrowToggle ──────────────────────────────────────────────────
 const ArrowToggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void; label?: string }> = ({ checked, onChange, label = 'Ayudas visuales' }) => {
   const id = useId();
   return (
@@ -182,14 +166,10 @@ const ArrowToggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void; 
   );
 };
 
-// ─── COMPONENTE: Panel modo vs PC ─────────────────────────────────────────────
+// ─── COMPONENTE: VsComputerPanel ──────────────────────────────────────────────
 const VsComputerPanel: React.FC<{
-  enabled: boolean;
-  level: number;
-  onToggle: () => void;
-  onLevelChange: (l: number) => void;
-  isComputerTurn: boolean;
-  gameOver: string | null;
+  enabled: boolean; level: number; onToggle: () => void;
+  onLevelChange: (l: number) => void; isComputerTurn: boolean; gameOver: string | null;
 }> = ({ enabled, level, onToggle, onLevelChange, isComputerTurn, gameOver }) => (
   <div className="vs-computer-panel">
     <div className="vs-computer-panel__header">
@@ -197,76 +177,52 @@ const VsComputerPanel: React.FC<{
         <Bot size={14} aria-hidden="true" className="vs-computer-panel__icon" />
         <span className="vs-computer-panel__title">vs Computadora</span>
       </div>
-      <button
-        role="switch"
-        aria-checked={enabled}
-        onClick={onToggle}
+      <button role="switch" aria-checked={enabled} onClick={onToggle}
         className={`arrow-toggle__switch${enabled ? ' arrow-toggle__switch--on' : ''}`}
-        aria-label={enabled ? 'Desactivar modo vs computadora' : 'Activar modo vs computadora'}
-      >
+        aria-label={enabled ? 'Desactivar modo vs computadora' : 'Activar modo vs computadora'}>
         <span className="arrow-toggle__thumb" />
       </button>
     </div>
-
     {enabled && (
       <div className="vs-computer-panel__body">
         <div className="vs-computer-panel__level-row">
           <label className="vs-computer-panel__level-label">
             Nivel: <strong>{DIFFICULTY_LABELS[level]}</strong>
           </label>
-          <input
-            type="range" min={1} max={8} step={1} value={level}
+          <input type="range" min={1} max={8} step={1} value={level}
             onChange={e => onLevelChange(parseInt(e.target.value))}
             className="vs-computer-panel__slider"
-            aria-label={`Nivel de dificultad: ${DIFFICULTY_LABELS[level]}`}
-          />
-          <div className="vs-computer-panel__level-ticks">
-            <span>1</span><span>8</span>
-          </div>
+            aria-label={`Nivel de dificultad: ${DIFFICULTY_LABELS[level]}`} />
+          <div className="vs-computer-panel__level-ticks"><span>1</span><span>8</span></div>
         </div>
-
         <div className="vs-computer-panel__status">
-          <User size={12} aria-hidden="true" /> Blancas (vos)
-          &nbsp;·&nbsp;
-          <Bot size={12} aria-hidden="true" /> Negras (PC)
+          <User size={12} aria-hidden="true" /> Blancas (vos) &nbsp;·&nbsp; <Bot size={12} aria-hidden="true" /> Negras (PC)
         </div>
-
         {isComputerTurn && !gameOver && (
           <div className="vs-computer-panel__thinking" role="status">
             <Loader2 size={12} className="spin" aria-hidden="true" />
             La computadora está pensando…
           </div>
         )}
-
-        {gameOver && (
-          <div className="vs-computer-panel__gameover" role="status">
-            {gameOver}
-          </div>
-        )}
+        {gameOver && <div className="vs-computer-panel__gameover" role="status">{gameOver}</div>}
       </div>
     )}
   </div>
 );
 
-// ─── COMPONENTE: Modal de exportación ────────────────────────────────────────
+// ─── COMPONENTE: ExportModal ──────────────────────────────────────────────────
 const ExportModal: React.FC<{ pgn: string; fen: string; onClose: () => void }> = ({ pgn, fen, onClose }) => {
   const [copied, setCopied] = useState<'pgn' | 'fen' | null>(null);
-
   const copy = (text: string, type: 'pgn' | 'fen') => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(type);
-      setTimeout(() => setCopied(null), 1800);
-    });
+    navigator.clipboard.writeText(text).then(() => { setCopied(type); setTimeout(() => setCopied(null), 1800); });
   };
-
   const downloadPGN = () => {
     const blob = new Blob([pgn], { type: 'text/plain' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
     a.href = url; a.download = `partida-${Date.now()}.pgn`; a.click();
     URL.revokeObjectURL(url);
   };
-
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', h);
@@ -279,30 +235,19 @@ const ExportModal: React.FC<{ pgn: string; fen: string; onClose: () => void }> =
       <div className="modal">
         <div className="modal__header">
           <span className="modal__title">Exportar partida</span>
-          <button className="modal__close" onClick={onClose} aria-label="Cerrar modal">
-            <X size={16} aria-hidden="true" />
-          </button>
+          <button className="modal__close" onClick={onClose} aria-label="Cerrar modal"><X size={16} aria-hidden="true" /></button>
         </div>
         <div className="modal__body">
           <p className="modal__label">PGN</p>
-          <pre className="modal__pre">{pgn || '(partida vacía — jugá al menos un movimiento)'}</pre>
+          <pre className="modal__pre">{pgn || '(partida vacía)'}</pre>
           <div className="modal__actions">
-            <button className="btn-secondary" onClick={() => copy(pgn, 'pgn')}>
-              <Copy size={13} aria-hidden="true" />
-              {copied === 'pgn' ? '¡Copiado!' : 'Copiar'}
-            </button>
-            <button className="btn-secondary" onClick={downloadPGN}>
-              <Download size={13} aria-hidden="true" />
-              Descargar .pgn
-            </button>
+            <button className="btn-secondary" onClick={() => copy(pgn, 'pgn')}><Copy size={13} aria-hidden="true" />{copied === 'pgn' ? '¡Copiado!' : 'Copiar'}</button>
+            <button className="btn-secondary" onClick={downloadPGN}><Download size={13} aria-hidden="true" />Descargar .pgn</button>
           </div>
           <p className="modal__label" style={{ marginTop: '1rem' }}>FEN actual</p>
           <pre className="modal__pre modal__pre--fen">{fen}</pre>
           <div className="modal__actions">
-            <button className="btn-secondary" onClick={() => copy(fen, 'fen')}>
-              <Copy size={13} aria-hidden="true" />
-              {copied === 'fen' ? '¡Copiado!' : 'Copiar FEN'}
-            </button>
+            <button className="btn-secondary" onClick={() => copy(fen, 'fen')}><Copy size={13} aria-hidden="true" />{copied === 'fen' ? '¡Copiado!' : 'Copiar FEN'}</button>
           </div>
         </div>
       </div>
@@ -310,26 +255,20 @@ const ExportModal: React.FC<{ pgn: string; fen: string; onClose: () => void }> =
   );
 };
 
-// ─── COMPONENTE: Dropdown de configuración ───────────────────────────────────
+// ─── COMPONENTE: HeaderSettings ───────────────────────────────────────────────
 const HeaderSettings: React.FC<{
-  coachId: string;
-  onCoachChange: (id: string) => void;
-  showArrows: boolean;
-  onArrowsChange: (v: boolean) => void;
-  showThreats: boolean;
-  onThreatsChange: (v: boolean) => void;
+  coachId: string; onCoachChange: (id: string) => void;
+  showArrows: boolean; onArrowsChange: (v: boolean) => void;
+  showThreats: boolean; onThreatsChange: (v: boolean) => void;
 }> = ({ coachId, onCoachChange, showArrows, onArrowsChange, showThreats, onThreatsChange }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const h = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, []);
-
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
     document.addEventListener('keydown', h);
@@ -340,18 +279,12 @@ const HeaderSettings: React.FC<{
 
   return (
     <div ref={ref} className="header-settings">
-      <button
-        className="header-settings__trigger"
-        aria-haspopup="true"
-        aria-expanded={open}
-        aria-label={`Configuración — entrenador: ${coachInfo.label}`}
-        onClick={() => setOpen(v => !v)}
-      >
+      <button className="header-settings__trigger" aria-haspopup="true" aria-expanded={open}
+        aria-label={`Configuración — entrenador: ${coachInfo.label}`} onClick={() => setOpen(v => !v)}>
         <span className="coach-avatar" aria-hidden="true">{coachInfo.avatar}</span>
         <span className="header-settings__name">{coachInfo.label}</span>
         <Settings size={13} aria-hidden="true" className="header-settings__gear" />
       </button>
-
       {open && (
         <div className="header-settings__dropdown" role="menu" aria-label="Opciones del entrenador">
           <p className="header-settings__section-label">Entrenador</p>
@@ -377,25 +310,22 @@ const HeaderSettings: React.FC<{
   );
 };
 
-// ─── COMPONENTE: Chat ────────────────────────────────────────────────────────
+// ─── COMPONENTE: ChatPanel ────────────────────────────────────────────────────
 const ChatPanel: React.FC<{
   log: ChatMessage[]; value: string;
   onChange: (v: string) => void; onSend: () => void; loading: boolean;
 }> = ({ log, value, onChange, onSend, loading }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
   const regionId  = useId();
-
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [log]);
 
   return (
     <section className="chat-panel" aria-label="Chat con el entrenador">
       <header className="chat-panel__header">
-        <span className="chat-panel__title">Chat</span>
+        <span className="chat-panel__title">Chat con el coach</span>
       </header>
       <div id={regionId} role="log" aria-live="polite" className="chat-panel__log">
-        {log.length === 0 && (
-          <p className="chat-panel__empty">Hacé una pregunta sobre la posición actual.</p>
-        )}
+        {log.length === 0 && <p className="chat-panel__empty">Hacé una pregunta sobre la posición o las sugerencias del coach.</p>}
         {log.map((msg, i) => (
           <div key={i} className={`chat-bubble chat-bubble--${msg.role}`}>
             <p className="chat-bubble__text">{msg.text}</p>
@@ -408,11 +338,10 @@ const ChatPanel: React.FC<{
         <input id="chat-input" type="text" value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend(); } }}
-          placeholder="Preguntá algo…" disabled={loading}
+          placeholder="¿Por qué esa jugada? ¿Qué hago si…?" disabled={loading}
           autoComplete="off" spellCheck={false} maxLength={500}
-          className="chat-panel__input" aria-label="Mensaje para el entrenador" />
-        <button onClick={onSend} disabled={loading || !value.trim()}
-          className="chat-panel__send" aria-label="Enviar mensaje">
+          className="chat-panel__input" />
+        <button onClick={onSend} disabled={loading || !value.trim()} className="chat-panel__send" aria-label="Enviar">
           {loading ? <Loader2 size={16} className="spin" aria-hidden="true" /> : <Send size={16} aria-hidden="true" />}
         </button>
       </div>
@@ -430,17 +359,22 @@ const App: React.FC = () => {
   const currentStepRef                = useRef(0);
 
   const [coachId, setCoachId]         = useState('magnus');
+  const coachIdRef                    = useRef('magnus');
   const [analysis, setAnalysis]       = useState<AnalysisResponse | null>(null);
+  const analysisRef                   = useRef<AnalysisResponse | null>(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [showArrows, setShowArrows]   = useState(true);
   const [showThreats, setShowThreats] = useState(true);
 
+  // Comentario del movimiento de la PC (se muestra en el panel del coach)
+  const [computerMoveComment, setComputerMoveComment] = useState<string | null>(null);
+
   // Modo vs Computadora
-  const [vsComputer, setVsComputer]       = useState(false);
-  const [difficulty, setDifficulty]       = useState(4);
+  const [vsComputer, setVsComputer]         = useState(false);
+  const [difficulty, setDifficulty]         = useState(4);
   const [isComputerTurn, setIsComputerTurn] = useState(false);
-  const [gameOver, setGameOver]           = useState<string | null>(null);
-  const computerMovingRef                 = useRef(false);
+  const [gameOver, setGameOver]             = useState<string | null>(null);
+  const computerMovingRef                   = useRef(false);
 
   const [chatLog, setChatLog]         = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput]     = useState('');
@@ -449,16 +383,20 @@ const App: React.FC = () => {
 
   const abortableFetch = useAbortFetch();
 
-  const fetchAnalysis = useCallback(async (fen: string, coach: string) => {
+  // ─── fetchAnalysis: siempre pasa el historial de FENs ─────────────────────
+  const fetchAnalysis = useCallback(async (fen: string, coach: string, fenHistory: string[]) => {
     setLoadingAnalysis(true);
+    setComputerMoveComment(null); // limpiar comentario previo de PC
     try {
       const res = await abortableFetch(`${API_URL}/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fen, coachId: coach }),
+        body: JSON.stringify({ fen, coachId: coach, fenHistory }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setAnalysis(await res.json());
+      const data = await res.json();
+      setAnalysis(data);
+      analysisRef.current = data;
     } catch (err: unknown) {
       if (err instanceof Error && err.name !== 'AbortError') console.error('[análisis]', err.message);
     } finally {
@@ -466,24 +404,24 @@ const App: React.FC = () => {
     }
   }, [abortableFetch]);
 
-  useEffect(() => { fetchAnalysis(gameRef.current.fen(), coachId); /* eslint-disable-next-line */ }, []);
+  useEffect(() => {
+    fetchAnalysis(gameRef.current.fen(), coachId, historyRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // ─── Detectar fin de partida ────────────────────────────────────────────────
+  // ─── checkGameOver ─────────────────────────────────────────────────────────
   const checkGameOver = useCallback((g: Chess) => {
     if (g.isCheckmate()) {
-      const winner = g.turn() === 'w' ? 'Negras' : 'Blancas';
-      setGameOver(`¡Jaque mate! Ganaron ${winner}.`);
-    } else if (g.isDraw()) {
-      setGameOver('¡Tablas!');
-    } else if (g.isStalemate()) {
-      setGameOver('Tablas por ahogado.');
+      setGameOver(`¡Jaque mate! Ganaron ${g.turn() === 'w' ? 'Negras' : 'Blancas'}.`);
+    } else if (g.isDraw() || g.isStalemate()) {
+      setGameOver(g.isStalemate() ? 'Tablas por ahogado.' : '¡Tablas!');
     } else {
       setGameOver(null);
     }
   }, []);
 
-  // ─── Movimiento de la computadora ──────────────────────────────────────────
-  const doComputerMove = useCallback(async (fen: string, level: number) => {
+  // ─── doComputerMove: mueve la PC y luego pide comentario del coach ─────────
+  const doComputerMove = useCallback(async (fen: string, level: number, fenHistorySnapshot: string[]) => {
     if (computerMovingRef.current) return;
     computerMovingRef.current = true;
     setIsComputerTurn(true);
@@ -496,64 +434,87 @@ const App: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fen, level }),
       });
-
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      const moveStr = data.move;
-
-      if (!moveStr) throw new Error("No se recibió movimiento del servidor");
+      const moveStr: string = data.move;
+      if (!moveStr) throw new Error('No se recibió movimiento');
 
       const copy = new Chess(fen);
-      const result = copy.move(moveStr);
+      const moveResult = copy.move(moveStr);
+      if (!moveResult) throw new Error(`Movimiento inválido: ${moveStr}`);
 
-      if (result) {
-        const newFen = copy.fen();
-        const newHist = [...historyRef.current, newFen];
-        const newStep = newHist.length - 1;
+      const newFen  = copy.fen();
+      const newHist = [...fenHistorySnapshot, newFen];
+      const newStep = newHist.length - 1;
 
-        gameRef.current = copy;
-        historyRef.current = newHist;
-        currentStepRef.current = newStep;
+      gameRef.current        = copy;
+      historyRef.current     = newHist;
+      currentStepRef.current = newStep;
 
-        setGame(new Chess(newFen));
-        setHistory(newHist);
-        setCurrentStep(newStep);
+      setGame(new Chess(newFen));
+      setHistory(newHist);
+      setCurrentStep(newStep);
+      checkGameOver(copy);
 
-        checkGameOver(copy);
-        fetchAnalysis(newFen, coachId);
-      } else {
-        console.error("El servidor devolvió un movimiento inválido:", moveStr);
-      }
+      // Pedir comentario del movimiento de la PC en paralelo con el análisis
+      const currentCoach = coachIdRef.current;
+
+      // Comentario específico del movimiento de la PC
+      fetch(`${API_URL}/move-comment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fenBefore: fen,
+          fenAfter: newFen,
+          moveSAN: moveResult.san,
+          coachId: currentCoach,
+          fenHistory: newHist,
+        }),
+      })
+        .then(r => r.json())
+        .then(d => {
+          if (d.comment) setComputerMoveComment(d.comment);
+          // Actualizar el análisis con las sugerencias tras el movimiento de la PC
+          if (d.suggestionsAfter) {
+            const updated: AnalysisResponse = {
+              suggestions: d.suggestionsAfter,
+              explanation: d.comment || '',
+              threatSuggestions: analysisRef.current?.threatSuggestions,
+            };
+            setAnalysis(updated);
+            analysisRef.current = updated;
+          }
+        })
+        .catch(e => console.error('[move-comment]', e));
+
     } catch (err) {
-      console.error('[Error en doComputerMove]:', err);
+      console.error('[doComputerMove]', err);
     } finally {
       computerMovingRef.current = false;
       setIsComputerTurn(false);
     }
-  }, [coachId, fetchAnalysis, checkGameOver]);
+  }, [checkGameOver]);
 
-  // ─── Flechas propias con intensidad variable ────────────────────────────────
+  // ─── Flechas ───────────────────────────────────────────────────────────────
   const ownArrows = useMemo<BoardArrow[]>(() => {
     if (!showArrows || !analysis?.suggestions) return [];
     return analysis.suggestions.slice(0, 3).map((s, i) => [
-      s.uci.slice(0, 2) as Square,
-      s.uci.slice(2, 4) as Square,
+      s.uci.slice(0, 2) as Square, s.uci.slice(2, 4) as Square,
       ARROW_COLORS_OWN[i] ?? ARROW_COLORS_OWN[2],
     ]);
   }, [analysis, showArrows]);
 
-  // ─── Flechas de amenaza del rival ────────────────────────────────────────────
   const threatArrows = useMemo<BoardArrow[]>(() => {
     if (!showThreats || !analysis?.threatSuggestions) return [];
     return analysis.threatSuggestions.slice(0, 3).map((s, i) => [
-      s.uci.slice(0, 2) as Square,
-      s.uci.slice(2, 4) as Square,
+      s.uci.slice(0, 2) as Square, s.uci.slice(2, 4) as Square,
       ARROW_COLORS_THREAT[i] ?? ARROW_COLORS_THREAT[2],
     ]);
   }, [analysis, showThreats]);
 
   const arrows = useMemo<BoardArrow[]>(() => [...ownArrows, ...threatArrows], [ownArrows, threatArrows]);
 
+  // ─── onDrop ─────────────────────────────────────────────────────────────────
   const onDrop = useCallback((from: string, to: string): boolean => {
     if (vsComputer && (isComputerTurn || gameOver || computerMovingRef.current)) return false;
     if (vsComputer && gameRef.current.turn() !== 'w') return false;
@@ -568,50 +529,55 @@ const App: React.FC = () => {
       newHist.push(newFen);
       const newStep = newHist.length - 1;
 
-      gameRef.current = copy;
-      historyRef.current = newHist;
+      gameRef.current        = copy;
+      historyRef.current     = newHist;
       currentStepRef.current = newStep;
 
       setGame(copy);
       setHistory(newHist);
       setCurrentStep(newStep);
       checkGameOver(copy);
-      fetchAnalysis(newFen, coachId);
+      fetchAnalysis(newFen, coachIdRef.current, newHist);
 
       if (vsComputer && !copy.isGameOver()) {
-        setTimeout(() => { doComputerMove(newFen, difficulty); }, 50);
+        setTimeout(() => { doComputerMove(newFen, difficulty, newHist); }, 50);
       }
       return true;
     } catch { return false; }
-  }, [vsComputer, isComputerTurn, gameOver, coachId, fetchAnalysis, checkGameOver, doComputerMove, difficulty]);
+  }, [vsComputer, isComputerTurn, gameOver, fetchAnalysis, checkGameOver, doComputerMove, difficulty]);
 
+  // ─── navigate ───────────────────────────────────────────────────────────────
   const navigate = useCallback((dir: number) => {
     const next = currentStepRef.current + dir;
     if (next < 0 || next >= historyRef.current.length) return;
     const fen = historyRef.current[next];
     const ng  = new Chess(fen);
-    gameRef.current = ng;
+    gameRef.current        = ng;
     currentStepRef.current = next;
     setGame(ng);
     setCurrentStep(next);
-    fetchAnalysis(fen, coachId);
-  }, [coachId, fetchAnalysis]);
-
-  const handleCoachChange = useCallback((id: string) => {
-    setCoachId(id);
-    fetchAnalysis(gameRef.current.fen(), id);
+    // Pasamos el historial hasta ese punto para que el coach sepa qué se jugó
+    fetchAnalysis(fen, coachIdRef.current, historyRef.current.slice(0, next + 1));
   }, [fetchAnalysis]);
 
+  // ─── handleCoachChange ──────────────────────────────────────────────────────
+  const handleCoachChange = useCallback((id: string) => {
+    setCoachId(id);
+    coachIdRef.current = id;
+    fetchAnalysis(gameRef.current.fen(), id, historyRef.current.slice(0, currentStepRef.current + 1));
+  }, [fetchAnalysis]);
+
+  // ─── toggleVsComputer ───────────────────────────────────────────────────────
   const toggleVsComputer = useCallback(() => {
     setVsComputer(v => {
-      const next = !v;
       setGameOver(null);
       computerMovingRef.current = false;
       setIsComputerTurn(false);
-      return next;
+      return !v;
     });
   }, []);
 
+  // ─── sendChat: envía historial completo + lo que el coach dijo ──────────────
   const sendChat = useCallback(async () => {
     const q = chatInput.trim();
     if (!q || loadingChat) return;
@@ -620,31 +586,50 @@ const App: React.FC = () => {
       /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ''
     );
     if (!safeQ) return;
+
     const updated: ChatMessage[] = [...chatLog, { role: 'user', text: safeQ }];
-    setChatLog(updated); setChatInput(''); setLoadingChat(true);
+    setChatLog(updated);
+    setChatInput('');
+    setLoadingChat(true);
+
     try {
+      const currentAnalysis = analysisRef.current;
       const res = await fetch(`${API_URL}/chat`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          fen: gameRef.current.fen(), question: safeQ, history: updated,
-          coachId, lastAnalysisSAN: analysis?.suggestions.map(s => s.san).join(', ') ?? '',
+          fen: gameRef.current.fen(),
+          question: safeQ,
+          history: updated,
+          coachId: coachIdRef.current,
+          fenHistory: historyRef.current.slice(0, currentStepRef.current + 1),
+          // Pasamos exactamente lo que el coach dijo en el panel
+          lastExplanation: computerMoveComment || currentAnalysis?.explanation || '',
+          lastSuggestions: currentAnalysis?.suggestions ?? [],
+          lastThreatSuggestions: currentAnalysis?.threatSuggestions ?? [],
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      const answer = typeof data.answer === 'string' && data.answer.length > 0 ? data.answer : 'El entrenador no respondió.';
+      const answer = typeof data.answer === 'string' && data.answer.length > 0
+        ? data.answer : 'El entrenador no respondió.';
       setChatLog(prev => [...prev, { role: 'coach', text: answer }]);
     } catch (err: unknown) {
       setChatLog(prev => [...prev, { role: 'coach', text: err instanceof Error ? err.message : 'Error de conexión.' }]);
-    } finally { setLoadingChat(false); }
-  }, [chatInput, chatLog, coachId, analysis, loadingChat]);
+    } finally {
+      setLoadingChat(false);
+    }
+  }, [chatInput, chatLog, computerMoveComment, loadingChat]);
 
+  // ─── resetGame ──────────────────────────────────────────────────────────────
   const resetGame = () => {
     const fresh = new Chess();
-    gameRef.current = fresh;
-    historyRef.current = [fresh.fen()];
+    gameRef.current        = fresh;
+    historyRef.current     = [fresh.fen()];
     currentStepRef.current = 0;
     computerMovingRef.current = false;
+    analysisRef.current    = null;
+
     setGame(fresh);
     setHistory([fresh.fen()]);
     setCurrentStep(0);
@@ -652,28 +637,30 @@ const App: React.FC = () => {
     setChatLog([]);
     setGameOver(null);
     setIsComputerTurn(false);
-    fetchAnalysis(fresh.fen(), coachId);
+    setComputerMoveComment(null);
+    fetchAnalysis(fresh.fen(), coachIdRef.current, [fresh.fen()]);
   };
 
-  const evalScore = analysis?.suggestions[0]?.score ?? '0.0';
-  const pgn       = buildPGN(historyRef.current);
+  const evalScore     = analysis?.suggestions[0]?.score ?? '0.0';
+  const pgn           = buildPGN(historyRef.current);
   const boardDisabled = vsComputer && (isComputerTurn || !!gameOver);
+
+  // El texto del panel del coach: si hay comentario de movimiento de PC, lo mostramos primero
+  const coachPanelText = computerMoveComment
+    || analysis?.explanation
+    || 'Realizá un movimiento para recibir feedback.';
 
   return (
     <>
       <a href="#main-content" className="skip-link">Saltar al contenido principal</a>
-
       <div className="app-shell">
         <header className="app-header" role="banner">
           <Target size={18} aria-hidden="true" className="app-header__icon" />
           <h1 className="app-header__title">Chess Coach</h1>
           <HeaderSettings
-            coachId={coachId}
-            onCoachChange={handleCoachChange}
-            showArrows={showArrows}
-            onArrowsChange={setShowArrows}
-            showThreats={showThreats}
-            onThreatsChange={setShowThreats}
+            coachId={coachId} onCoachChange={handleCoachChange}
+            showArrows={showArrows} onArrowsChange={setShowArrows}
+            showThreats={showThreats} onThreatsChange={setShowThreats}
           />
         </header>
 
@@ -706,44 +693,35 @@ const App: React.FC = () => {
               className="btn-icon" aria-label="Jugada siguiente">
               <ChevronRight size={20} aria-hidden="true" />
             </button>
-            <button onClick={() => setShowExport(true)}
-              className="btn-icon" aria-label="Exportar partida" title="Exportar PGN / FEN">
+            <button onClick={() => setShowExport(true)} className="btn-icon" aria-label="Exportar partida">
               <Download size={18} aria-hidden="true" />
             </button>
-            <button onClick={resetGame}
-              className="btn-icon btn-icon--danger" aria-label="Reiniciar partida">
+            <button onClick={resetGame} className="btn-icon btn-icon--danger" aria-label="Reiniciar partida">
               <RotateCcw size={18} aria-hidden="true" />
             </button>
           </nav>
 
           <aside className="side-panel" aria-label="Panel del entrenador">
             <VsComputerPanel
-              enabled={vsComputer}
-              level={difficulty}
-              onToggle={toggleVsComputer}
-              onLevelChange={setDifficulty}
-              isComputerTurn={isComputerTurn}
-              gameOver={gameOver}
+              enabled={vsComputer} level={difficulty}
+              onToggle={toggleVsComputer} onLevelChange={setDifficulty}
+              isComputerTurn={isComputerTurn} gameOver={gameOver}
             />
 
             <Collapsible
               defaultOpen={false}
               title={
                 loadingAnalysis
-                  ? <><Loader2 size={12} className="spin" aria-hidden="true" /><span style={{marginLeft:6}}>Analizando…</span></>
+                  ? <><Loader2 size={12} className="spin" aria-hidden="true" /><span style={{ marginLeft: 6 }}>Analizando…</span></>
                   : 'Mejores jugadas'
               }
             >
-              {/* Jugadas propias */}
               <div role="list" aria-label="Jugadas sugeridas" aria-busy={loadingAnalysis} style={{ marginBottom: '0.5rem' }}>
-                {analysis?.suggestions.length ? (
-                  analysis.suggestions.map((s, i) => <SuggestionRow key={s.uci} suggestion={s} rank={i + 1} />)
-                ) : (
-                  <p className="panel-empty">{loadingAnalysis ? '' : 'Sin datos todavía.'}</p>
-                )}
+                {analysis?.suggestions.length
+                  ? analysis.suggestions.map((s, i) => <SuggestionRow key={s.uci} suggestion={s} rank={i + 1} />)
+                  : <p className="panel-empty">{loadingAnalysis ? '' : 'Sin datos todavía.'}</p>}
               </div>
 
-              {/* Amenazas del rival */}
               {analysis?.threatSuggestions && analysis.threatSuggestions.length > 0 && (
                 <>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem', paddingTop: '0.25rem', borderTop: '1px solid var(--border)' }}>
@@ -763,9 +741,7 @@ const App: React.FC = () => {
 
             <Collapsible title="Consejo del entrenador" defaultOpen={true} accentBorder={true}>
               <p className="panel-body" aria-live="polite" aria-atomic="true">
-                {loadingAnalysis
-                  ? 'Analizando posición…'
-                  : analysis?.explanation || 'Realizá un movimiento para recibir feedback.'}
+                {loadingAnalysis ? 'Analizando posición…' : coachPanelText}
               </p>
             </Collapsible>
 
@@ -777,9 +753,7 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      {showExport && (
-        <ExportModal pgn={pgn} fen={game.fen()} onClose={() => setShowExport(false)} />
-      )}
+      {showExport && <ExportModal pgn={pgn} fen={game.fen()} onClose={() => setShowExport(false)} />}
     </>
   );
 };
