@@ -24,13 +24,20 @@ import {
   X,
   Bot,
   User,
+  AlertTriangle,
 } from 'lucide-react';
 
 // ─── TIPOS ────────────────────────────────────────────────────────────────────
 interface Suggestion { uci: string; san: string; score: string; }
-interface AnalysisResponse { suggestions: Suggestion[]; explanation: string; }
+interface AnalysisResponse {
+  suggestions: Suggestion[];
+  explanation: string;
+  threatSuggestions?: Suggestion[]; // mejores jugadas del rival
+}
 interface ChatMessage { role: 'user' | 'coach'; text: string; }
-type BoardArrow = [Square, Square];
+
+// react-chessboard acepta flechas como [Square, Square, string?]
+type BoardArrow = [Square, Square, string?];
 
 // ─── CONSTANTES ───────────────────────────────────────────────────────────────
 const RAW_API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
@@ -61,6 +68,20 @@ const DIFFICULTY_LABELS: Record<number, string> = {
   7: 'Experto',
   8: 'Maestro',
 };
+
+// Colores de flechas propias según ranking (RGBA con transparencia)
+const ARROW_COLORS_OWN = [
+  'rgba(100, 220, 100, 0.85)',  // 1ra: verde intenso
+  'rgba(100, 200, 100, 0.50)',  // 2da: verde medio
+  'rgba(100, 180, 100, 0.28)',  // 3ra: verde tenue
+];
+
+// Colores de flechas de amenaza del rival
+const ARROW_COLORS_THREAT = [
+  'rgba(255, 80, 80, 0.75)',   // 1ra amenaza: rojo intenso
+  'rgba(255, 80, 80, 0.42)',   // 2da amenaza: rojo medio
+  'rgba(255, 80, 80, 0.22)',   // 3ra amenaza: rojo tenue
+];
 
 // ─── UTILIDAD: exportar PGN ───────────────────────────────────────────────────
 function buildPGN(fenHistory: string[]): string {
@@ -134,28 +155,28 @@ const EvalBar: React.FC<{ score: string; loading: boolean }> = ({ score, loading
 };
 
 // ─── COMPONENTE: Fila de sugerencia ──────────────────────────────────────────
-const SuggestionRow: React.FC<{ suggestion: Suggestion; rank: number }> = ({ suggestion, rank }) => (
-  <div className="suggestion-row" role="listitem">
+const SuggestionRow: React.FC<{ suggestion: Suggestion; rank: number; isThreat?: boolean }> = ({ suggestion, rank, isThreat }) => (
+  <div className={`suggestion-row${isThreat ? ' suggestion-row--threat' : ''}`} role="listitem">
     <span className="suggestion-row__rank" aria-label={`Opción ${rank}`}>{rank}</span>
     <span className="suggestion-row__san">{suggestion.san}</span>
-    <span className="suggestion-row__score">{suggestion.score}</span>
+    <span className={`suggestion-row__score${isThreat ? ' suggestion-row__score--threat' : ''}`}>{suggestion.score}</span>
   </div>
 );
 
 // ─── COMPONENTE: Toggle de ayudas ────────────────────────────────────────────
-const ArrowToggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void }> = ({ checked, onChange }) => {
+const ArrowToggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void; label?: string }> = ({ checked, onChange, label = 'Ayudas visuales' }) => {
   const id = useId();
   return (
     <div className="arrow-toggle">
       <label htmlFor={id} className="arrow-toggle__label">
         {checked ? <Eye size={14} aria-hidden="true" /> : <EyeOff size={14} aria-hidden="true" />}
-        <span>Ayudas visuales</span>
+        <span>{label}</span>
       </label>
       <button id={id} role="switch" aria-checked={checked}
         onClick={() => onChange(!checked)}
         className={`arrow-toggle__switch${checked ? ' arrow-toggle__switch--on' : ''}`}>
         <span className="arrow-toggle__thumb" />
-        <span className="sr-only">{checked ? 'Desactivar' : 'Activar'} ayudas visuales</span>
+        <span className="sr-only">{checked ? 'Desactivar' : 'Activar'} {label}</span>
       </button>
     </div>
   );
@@ -295,7 +316,9 @@ const HeaderSettings: React.FC<{
   onCoachChange: (id: string) => void;
   showArrows: boolean;
   onArrowsChange: (v: boolean) => void;
-}> = ({ coachId, onCoachChange, showArrows, onArrowsChange }) => {
+  showThreats: boolean;
+  onThreatsChange: (v: boolean) => void;
+}> = ({ coachId, onCoachChange, showArrows, onArrowsChange, showThreats, onThreatsChange }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -341,8 +364,12 @@ const HeaderSettings: React.FC<{
             </button>
           ))}
           <div className="header-settings__divider" />
+          <p className="header-settings__section-label">Visualización</p>
           <div className="header-settings__toggle-row">
-            <ArrowToggle checked={showArrows} onChange={onArrowsChange} />
+            <ArrowToggle checked={showArrows} onChange={onArrowsChange} label="Mis mejores jugadas" />
+          </div>
+          <div className="header-settings__toggle-row">
+            <ArrowToggle checked={showThreats} onChange={onThreatsChange} label="Amenazas del rival" />
           </div>
         </div>
       )}
@@ -406,6 +433,7 @@ const App: React.FC = () => {
   const [analysis, setAnalysis]       = useState<AnalysisResponse | null>(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [showArrows, setShowArrows]   = useState(true);
+  const [showThreats, setShowThreats] = useState(true);
 
   // Modo vs Computadora
   const [vsComputer, setVsComputer]       = useState(false);
@@ -455,12 +483,11 @@ const App: React.FC = () => {
   }, []);
 
   // ─── Movimiento de la computadora ──────────────────────────────────────────
-const doComputerMove = useCallback(async (fen: string, level: number) => {
+  const doComputerMove = useCallback(async (fen: string, level: number) => {
     if (computerMovingRef.current) return;
     computerMovingRef.current = true;
     setIsComputerTurn(true);
 
-    // Un pequeño respiro para que la transición sea fluida
     await new Promise(r => setTimeout(r, 600));
 
     try {
@@ -469,41 +496,33 @@ const doComputerMove = useCallback(async (fen: string, level: number) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fen, level }),
       });
-      
+
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const moveStr = data.move;
 
       if (!moveStr) throw new Error("No se recibió movimiento del servidor");
 
-      // Usamos el FEN que recibimos como parámetro para crear la instancia
       const copy = new Chess(fen);
-      
-      // Intentamos aplicar el movimiento (chess.js acepta UCI strings directamente)
       const result = copy.move(moveStr);
 
       if (result) {
         const newFen = copy.fen();
-        
-        // IMPORTANTE: El nuevo historial debe basarse en el historial actual real
         const newHist = [...historyRef.current, newFen];
         const newStep = newHist.length - 1;
 
-        // 1. Actualizar Referencias (inmediato)
         gameRef.current = copy;
         historyRef.current = newHist;
         currentStepRef.current = newStep;
 
-        // 2. Actualizar Estados (dispara el re-renderizado)
-        // Usamos una nueva instancia de Chess para que el tablero detecte el cambio
         setGame(new Chess(newFen));
         setHistory(newHist);
         setCurrentStep(newStep);
-        
+
         checkGameOver(copy);
         fetchAnalysis(newFen, coachId);
       } else {
-        console.error("El servidor devolvió un movimiento inválido para esta posición:", moveStr);
+        console.error("El servidor devolvió un movimiento inválido:", moveStr);
       }
     } catch (err) {
       console.error('[Error en doComputerMove]:', err);
@@ -513,15 +532,30 @@ const doComputerMove = useCallback(async (fen: string, level: number) => {
     }
   }, [coachId, fetchAnalysis, checkGameOver]);
 
-  const arrows = useMemo<BoardArrow[]>(() => {
+  // ─── Flechas propias con intensidad variable ────────────────────────────────
+  const ownArrows = useMemo<BoardArrow[]>(() => {
     if (!showArrows || !analysis?.suggestions) return [];
-    return analysis.suggestions.map(s => [s.uci.slice(0, 2) as Square, s.uci.slice(2, 4) as Square]);
+    return analysis.suggestions.slice(0, 3).map((s, i) => [
+      s.uci.slice(0, 2) as Square,
+      s.uci.slice(2, 4) as Square,
+      ARROW_COLORS_OWN[i] ?? ARROW_COLORS_OWN[2],
+    ]);
   }, [analysis, showArrows]);
 
+  // ─── Flechas de amenaza del rival ────────────────────────────────────────────
+  const threatArrows = useMemo<BoardArrow[]>(() => {
+    if (!showThreats || !analysis?.threatSuggestions) return [];
+    return analysis.threatSuggestions.slice(0, 3).map((s, i) => [
+      s.uci.slice(0, 2) as Square,
+      s.uci.slice(2, 4) as Square,
+      ARROW_COLORS_THREAT[i] ?? ARROW_COLORS_THREAT[2],
+    ]);
+  }, [analysis, showThreats]);
+
+  const arrows = useMemo<BoardArrow[]>(() => [...ownArrows, ...threatArrows], [ownArrows, threatArrows]);
+
   const onDrop = useCallback((from: string, to: string): boolean => {
-    // Bloquear si es turno de la PC o partida terminada
     if (vsComputer && (isComputerTurn || gameOver || computerMovingRef.current)) return false;
-    // En modo vs PC, solo se pueden mover las blancas
     if (vsComputer && gameRef.current.turn() !== 'w') return false;
 
     try {
@@ -544,19 +578,14 @@ const doComputerMove = useCallback(async (fen: string, level: number) => {
       checkGameOver(copy);
       fetchAnalysis(newFen, coachId);
 
-          // Si modo vs PC y no terminó la partida, pedir jugada de la PC
       if (vsComputer && !copy.isGameOver()) {
-        // Usar un micro-timeout para asegurar que el estado de las blancas se procese primero
-        setTimeout(() => {
-          doComputerMove(newFen, difficulty);
-        }, 50);
+        setTimeout(() => { doComputerMove(newFen, difficulty); }, 50);
       }
       return true;
     } catch { return false; }
   }, [vsComputer, isComputerTurn, gameOver, coachId, fetchAnalysis, checkGameOver, doComputerMove, difficulty]);
 
   const navigate = useCallback((dir: number) => {
-    // Navegar desactiva el modo vs PC temporalmente
     const next = currentStepRef.current + dir;
     if (next < 0 || next >= historyRef.current.length) return;
     const fen = historyRef.current[next];
@@ -576,7 +605,6 @@ const doComputerMove = useCallback(async (fen: string, level: number) => {
   const toggleVsComputer = useCallback(() => {
     setVsComputer(v => {
       const next = !v;
-      // Al activar, si es turno de negras (posición rara inicial), no hacer nada
       setGameOver(null);
       computerMovingRef.current = false;
       setIsComputerTurn(false);
@@ -587,18 +615,20 @@ const doComputerMove = useCallback(async (fen: string, level: number) => {
   const sendChat = useCallback(async () => {
     const q = chatInput.trim();
     if (!q || loadingChat) return;
-   const safeQ = q.slice(0, 500).replace(
-  // eslint-disable-next-line no-control-regex
-  /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ''
-);
+    const safeQ = q.slice(0, 500).replace(
+      // eslint-disable-next-line no-control-regex
+      /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ''
+    );
     if (!safeQ) return;
     const updated: ChatMessage[] = [...chatLog, { role: 'user', text: safeQ }];
     setChatLog(updated); setChatInput(''); setLoadingChat(true);
     try {
       const res = await fetch(`${API_URL}/chat`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fen: gameRef.current.fen(), question: safeQ, history: updated,
-          coachId, lastAnalysisSAN: analysis?.suggestions.map(s => s.san).join(', ') ?? '' }),
+        body: JSON.stringify({
+          fen: gameRef.current.fen(), question: safeQ, history: updated,
+          coachId, lastAnalysisSAN: analysis?.suggestions.map(s => s.san).join(', ') ?? '',
+        }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -627,8 +657,6 @@ const doComputerMove = useCallback(async (fen: string, level: number) => {
 
   const evalScore = analysis?.suggestions[0]?.score ?? '0.0';
   const pgn       = buildPGN(historyRef.current);
-
-  // Bloquear el tablero cuando es turno de la PC
   const boardDisabled = vsComputer && (isComputerTurn || !!gameOver);
 
   return (
@@ -644,6 +672,8 @@ const doComputerMove = useCallback(async (fen: string, level: number) => {
             onCoachChange={handleCoachChange}
             showArrows={showArrows}
             onArrowsChange={setShowArrows}
+            showThreats={showThreats}
+            onThreatsChange={setShowThreats}
           />
         </header>
 
@@ -704,13 +734,31 @@ const doComputerMove = useCallback(async (fen: string, level: number) => {
                   : 'Mejores jugadas'
               }
             >
-              <div role="list" aria-label="Jugadas sugeridas" aria-busy={loadingAnalysis}>
+              {/* Jugadas propias */}
+              <div role="list" aria-label="Jugadas sugeridas" aria-busy={loadingAnalysis} style={{ marginBottom: '0.5rem' }}>
                 {analysis?.suggestions.length ? (
                   analysis.suggestions.map((s, i) => <SuggestionRow key={s.uci} suggestion={s} rank={i + 1} />)
                 ) : (
                   <p className="panel-empty">{loadingAnalysis ? '' : 'Sin datos todavía.'}</p>
                 )}
               </div>
+
+              {/* Amenazas del rival */}
+              {analysis?.threatSuggestions && analysis.threatSuggestions.length > 0 && (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem', paddingTop: '0.25rem', borderTop: '1px solid var(--border)' }}>
+                    <AlertTriangle size={11} style={{ color: 'rgba(255,80,80,0.85)', flexShrink: 0 }} aria-hidden="true" />
+                    <span style={{ fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,80,80,0.85)' }}>
+                      Amenazas del rival
+                    </span>
+                  </div>
+                  <div role="list" aria-label="Amenazas del rival">
+                    {analysis.threatSuggestions.map((s, i) => (
+                      <SuggestionRow key={`threat-${s.uci}`} suggestion={s} rank={i + 1} isThreat />
+                    ))}
+                  </div>
+                </>
+              )}
             </Collapsible>
 
             <Collapsible title="Consejo del entrenador" defaultOpen={true} accentBorder={true}>

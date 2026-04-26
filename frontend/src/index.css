@@ -600,3 +600,24 @@ p, label, .chat-bubble__text, .panel-body {
     forced-color-adjust: auto;
   }
 }
+
+/* ─── AGREGAR AL FINAL DE index.css ─────────────────────────────────────── */
+
+/* Fila de sugerencia — variante amenaza */
+.suggestion-row--threat {
+  background: rgba(255, 80, 80, 0.06);
+  border-color: rgba(255, 80, 80, 0.18);
+}
+
+.suggestion-row--threat:hover {
+  background: rgba(255, 80, 80, 0.12);
+  border-color: rgba(255, 80, 80, 0.35);
+}
+
+.suggestion-row--threat .suggestion-row__san {
+  color: #fca5a5;
+}
+
+.suggestion-row__score--threat {
+  color: rgba(255, 120, 120, 0.9) !important;
+}

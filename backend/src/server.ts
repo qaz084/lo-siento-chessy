@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import { Chess } from 'chess.js';
 import { StockfishService } from './services/StockfishService.js';
 
 const app = express();
@@ -45,7 +46,7 @@ async function callGroq(messages: { role: string; content: string }[]): Promise<
     },
     body: JSON.stringify({
       model: 'llama-3.3-70b-versatile',
-      max_tokens: 300,
+      max_tokens: 400,
       messages,
     }),
   });
@@ -60,24 +61,74 @@ async function callGroq(messages: { role: string; content: string }[]): Promise<
   return data.choices?.[0]?.message?.content || '';
 }
 
+// --- HELPER: obtener FEN invertido para analizar amenazas del rival ---
+// Simplemente analizamos la misma posición pero como si fuera turno del rival
+function getRivalFen(fen: string): string | null {
+  try {
+    const parts = fen.split(' ');
+    if (parts.length < 2) return null;
+    // Cambiamos el turno: w→b o b→w
+    parts[1] = parts[1] === 'w' ? 'b' : 'w';
+    // Reseteamos el contador de medios movimientos para evitar problemas
+    if (parts.length >= 5) parts[4] = '0';
+    const rivalFen = parts.join(' ');
+    // Validar que el FEN sea legal con chess.js
+    const test = new Chess(rivalFen);
+    // Si el rey del jugador actual está en jaque en la posición "como si fuera su turno"
+    // significa que esta posición no es válida para analizar — devolvemos null
+    if (test.isCheck()) return null;
+    return rivalFen;
+  } catch {
+    return null;
+  }
+}
+
 // --- ENDPOINT 1: Análisis automático tras cada movimiento ---
 app.post('/analyze', async (req, res) => {
   const { fen, coachId } = req.body;
   try {
+    // Análisis propio (tus mejores jugadas)
     const suggestions = await stockfish.analyze(fen);
+
+    // Análisis del rival (sus mejores amenazas desde la misma posición)
+    let threatSuggestions: typeof suggestions = [];
+    const rivalFen = getRivalFen(fen);
+    if (rivalFen) {
+      try {
+        threatSuggestions = await stockfish.analyze(rivalFen, 10);
+      } catch (e) {
+        console.warn('[analyze] No se pudieron calcular amenazas del rival:', e);
+      }
+    }
+
     const coach = personalities[coachId] || personalities.magnus;
+
+    // Prompt mejorado: explica TU mejor jugada + la intención del rival
+    const bestOwnMove   = suggestions[0]?.san   ?? 'sin datos';
+    const bestThreat    = threatSuggestions[0]?.san ?? null;
+    const rivalContext  = bestThreat
+      ? `La mejor respuesta del rival sería ${bestThreat} — explicá brevemente cuál es su amenaza o idea detrás de esa jugada (en 1 frase).`
+      : '';
 
     const explanation = await callGroq([{
       role: 'user',
-      content: `Eres el coach ${coach.name}. Tu tono es ${coach.tone}.
-FEN actual: ${fen}.
-Mejores jugadas: ${suggestions.map(s => s.san).join(', ')}.
-Explica brevemente el plan del rival y por qué la mejor jugada es ${suggestions[0]?.san}.
-Máximo 3 frases en español. No menciones números de evaluación.`,
+      content: `Eres el coach de ajedrez ${coach.name}. Tu estilo es ${coach.style} y tu tono es ${coach.tone}.
+
+Posición actual (FEN): ${fen}
+Tus mejores jugadas: ${suggestions.map(s => s.san).join(', ')}
+${bestThreat ? `Mejor jugada disponible para el rival: ${bestThreat}` : ''}
+
+Respondé en español con exactamente este formato en 3 frases:
+1. Explicá cuál es la IDEA PRINCIPAL detrás de la mejor jugada (${bestOwnMove}): qué problema resuelve, qué ventaja genera, o qué plan activa.
+2. ${rivalContext || 'Mencioná brevemente qué aspecto de la posición es más crítico ahora.'}
+3. Un consejo táctico o posicional concreto para esta posición, con tu estilo característico.
+
+No menciones números de evaluación. Sé específico con los nombres de las piezas y casillas.`,
     }]);
 
     res.json({
       suggestions,
+      threatSuggestions,
       explanation: explanation || 'El coach está analizando...',
     });
   } catch (error: any) {
@@ -91,9 +142,6 @@ app.post('/chat', async (req, res) => {
   const { fen, question, coachId, lastAnalysisSAN, history } = req.body;
   const coach = personalities[coachId] || personalities.magnus;
 
-  // El frontend manda role: 'user' | 'coach'
-  // Groq espera role: 'user' | 'assistant'
-  // Excluimos el último mensaje del historial porque es la pregunta actual (ya la mandamos aparte)
   const chatHistory = (history || [])
     .slice(0, -1)
     .filter((msg: { role: string; text: string }) => msg.text?.trim())
@@ -107,8 +155,9 @@ app.post('/chat', async (req, res) => {
       role: 'system',
       content: `Eres el coach de ajedrez ${coach.name}. Estilo: ${coach.style}. Tono: ${coach.tone}.
 Posición actual (FEN): ${fen}.
-Mejores jugadas sugeridas: ${lastAnalysisSAN || 'no disponibles'}.
-Responde siempre en español, de forma breve y con tu personalidad característica.`,
+Mejores jugadas sugeridas para el jugador: ${lastAnalysisSAN || 'no disponibles'}.
+Respondé siempre en español, de forma breve y con tu personalidad característica.
+Cuando expliques jugadas, mencioná la pieza y la casilla de destino para que sea claro.`,
     },
     ...chatHistory,
     { role: 'user', content: question },
@@ -129,7 +178,6 @@ Responde siempre en español, de forma breve y con tu personalidad característi
 app.post('/move', async (req, res) => {
   const { fen, level } = req.body;
 
-  // level 1-8 → depth progresivo con algo de aleatoriedad en niveles bajos
   const depthMap: Record<number, number> = {
     1: 1, 2: 2, 3: 4, 4: 6, 5: 8, 6: 10, 7: 12, 8: 15
   };
@@ -137,9 +185,7 @@ app.post('/move', async (req, res) => {
   const depth = depthMap[lvl];
 
   try {
-    // En niveles bajos, a veces jugamos una jugada aleatoria válida
     if (lvl <= 2 && Math.random() < 0.5) {
-      const { Chess } = await import('chess.js');
       const g = new Chess(fen);
       const moves = g.moves({ verbose: true });
       if (moves.length > 0) {
@@ -161,6 +207,5 @@ app.post('/move', async (req, res) => {
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 app.listen(PORT, () => console.log(`🚀 Backend corriendo en puerto ${PORT}`));
 
-// Apagado limpio
 process.on('SIGINT',  () => { stockfish.shutdown(); process.exit(0); });
 process.on('SIGTERM', () => { stockfish.shutdown(); process.exit(0); });
